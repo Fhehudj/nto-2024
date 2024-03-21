@@ -218,3 +218,8 @@ for el in available:
 
 
 Расшифрованный пароль - sFYZ#2z9VdUR9sm`3JRz'
+
+
+Forensic-2
+
+7) Видим XxJynx в корне диска, гуглим и видим, что это руткит
